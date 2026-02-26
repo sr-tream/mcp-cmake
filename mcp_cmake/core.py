@@ -10,9 +10,9 @@ from typing import Any, Dict, List, Optional
 from .models import ErrorDetail, FailureResponse, SuccessResponse
 
 
-def health_check(working_dir: Optional[str] = None) -> Dict[str, Any]:
+def check_environment(working_dir: Optional[str] = None) -> Dict[str, Any]:
     """
-    Checks the development environment's health.
+    Verifies the development environment for a CMake project.
     """
     if not working_dir or not os.path.isdir(working_dir):
         return {
