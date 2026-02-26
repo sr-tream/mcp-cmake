@@ -104,6 +104,8 @@ def build_project(
     targets: Optional[list[str]] = None,
     verbose: bool = False,
     parallel_jobs: Optional[int] = None,
+    head: Optional[int] = None,
+    tail: Optional[int] = None,
 ) -> dict:
     """
     Builds the CMake project using the named build preset.
@@ -112,11 +114,19 @@ def build_project(
     diagnostic output (JSON for GCC/Clang, SARIF for MSVC, plain text
     otherwise) so that errors can be analysed programmatically.
 
+    The full build log (stdout + stderr) is always included in the
+    ``build_log`` field of the response.
+
     Optionally restrict the build to specific ``targets``, enable verbose
     compiler output with ``verbose``, or speed up the build with
     ``parallel_jobs``.
+
+    Use ``head`` and/or ``tail`` to limit the number of log lines returned.
+    When a limit causes lines to be omitted, the complete log is saved to a
+    temporary file and a ``<build_output_striped>`` marker is inserted at the
+    cut point indicating how many lines were stripped and the path to the file.
     """
-    return core.build_project(working_dir, preset, targets, verbose, parallel_jobs)
+    return core.build_project(working_dir, preset, targets, verbose, parallel_jobs, head, tail)
 
 
 @mcp.tool

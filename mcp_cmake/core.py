@@ -3,6 +3,7 @@
 import os
 import shutil
 import subprocess
+import tempfile
 from typing import Any, Dict, List, Optional
 
 from .models import ErrorDetail, FailureResponse, SuccessResponse
@@ -79,6 +80,57 @@ def list_presets(working_dir: str) -> Dict[str, List[str]]:
         except FileNotFoundError:
             result[preset_type] = []
     return result
+
+
+def _apply_log_limits(log: str, head: Optional[int], tail: Optional[int]) -> str:
+    """Return *log* optionally trimmed to *head* first and/or *tail* last lines.
+
+    When any lines are omitted a ``<build_output_striped>`` marker is inserted
+    at the cut point and the full log is preserved in a temporary file whose
+    path is embedded in the marker.
+
+    Note: the marker tag name ``build_output_striped`` is intentional and
+    matches the format specified in the project requirements.
+    """
+    if head is None and tail is None:
+        return log
+
+    lines = log.splitlines(keepends=True)
+    total = len(lines)
+
+    # How many lines would actually be stripped?
+    if head is not None and tail is not None:
+        stripped_count = max(0, total - head - tail)
+    elif head is not None:
+        stripped_count = max(0, total - head)
+    else:  # tail only
+        stripped_count = max(0, total - tail)
+
+    if stripped_count == 0:
+        # No lines need to be removed; return the log unchanged.
+        return log
+
+    # Persist the full log to a temp file so the caller can inspect it.
+    fd, tmp_path = tempfile.mkstemp(suffix=".log", prefix="mcp_cmake_build_")
+    with os.fdopen(fd, "w") as fh:
+        fh.write(log)
+
+    marker = (
+        f"<build_output_striped>Here stripped {stripped_count} lines, "
+        f"due to head/tail output limits. "
+        f"You can find full log in file `{tmp_path}`</build_output_striped>"
+    )
+
+    if head is not None and tail is not None:
+        head_lines = lines[:head]
+        tail_lines = lines[-tail:] if tail > 0 else []
+        parts = head_lines + [marker + "\n"] + tail_lines
+    elif head is not None:
+        parts = lines[:head] + [marker]
+    else:  # tail only
+        parts = ([marker + "\n"] + lines[-tail:]) if tail > 0 else [marker]
+
+    return "".join(parts)
 
 
 def configure_project(working_dir: str, preset: str, cmake_defines: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
@@ -173,6 +225,8 @@ def build_project(
     targets: Optional[List[str]] = None,
     verbose: bool = False,
     parallel_jobs: Optional[int] = None,
+    head: Optional[int] = None,
+    tail: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Builds the project.
@@ -189,8 +243,12 @@ def build_project(
 
         result = subprocess.run(cmd, cwd=working_dir, capture_output=True, text=True)
 
+        build_log = _apply_log_limits(result.stdout + result.stderr, head, tail)
+
         if result.returncode == 0:
-            return SuccessResponse().dict()
+            response = SuccessResponse().dict()
+            response["build_log"] = build_log
+            return response
         else:
             # Determine compiler to know the error format.
             # Prefer CMAKE_CXX_COMPILER_ID; fall back to CMAKE_C_COMPILER_ID for
@@ -222,7 +280,9 @@ def build_project(
                 error_format = "sarif"
 
             formatted_error = format_error_for_llm_analysis(result.stderr, error_format)
-            return FailureResponse(**formatted_error).dict()
+            response = FailureResponse(**formatted_error).dict()
+            response["build_log"] = build_log
+            return response
 
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
         error_message = e.stderr if isinstance(e, subprocess.CalledProcessError) else str(e)
