@@ -1,10 +1,8 @@
 # mcp_cmake/core.py
 
-import json
 import os
 import shutil
 import subprocess
-import sys
 from typing import Any, Dict, List, Optional
 
 from .models import ErrorDetail, FailureResponse, SuccessResponse
@@ -54,20 +52,33 @@ def check_environment(working_dir: Optional[str] = None) -> Dict[str, Any]:
     }
 
 
-def list_presets(working_dir: str) -> List[str]:
+def list_presets(working_dir: str) -> Dict[str, List[str]]:
     """
-    Lists available configure presets from CMakePresets.json.
+    Lists all available presets (configure, build, test, workflow) by invoking
+    ``cmake --list-presets={type}``.  Presets from both ``CMakePresets.json``
+    and ``CMakeUserPresets.json`` are included automatically.
     """
-    presets_file = os.path.join(working_dir, "CMakePresets.json")
-    if not os.path.exists(presets_file):
-        return []
-
-    with open(presets_file, "r") as f:
+    result: Dict[str, List[str]] = {}
+    for preset_type in ["configure", "build", "test", "workflow"]:
         try:
-            data = json.load(f)
-            return [preset["name"] for preset in data.get("configurePresets", [])]
-        except (json.JSONDecodeError, KeyError):
-            return []
+            proc = subprocess.run(
+                ["cmake", f"--list-presets={preset_type}"],
+                cwd=working_dir,
+                capture_output=True,
+                text=True,
+            )
+            names: List[str] = []
+            if proc.returncode == 0:
+                for line in proc.stdout.splitlines():
+                    stripped = line.strip()
+                    parts = stripped.split('"')
+                    if stripped.startswith('"') and len(parts) >= 2:
+                        # Lines are: "name" or "name" - description
+                        names.append(parts[1])
+            result[preset_type] = names
+        except FileNotFoundError:
+            result[preset_type] = []
+    return result
 
 
 def configure_project(working_dir: str, preset: str, cmake_defines: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
