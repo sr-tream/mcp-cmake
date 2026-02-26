@@ -94,19 +94,21 @@ def configure_project(working_dir: str, preset: str, cmake_defines: Optional[Dic
         initial_cmd = ["cmake", "-S", working_dir, "-B", build_dir, f"--preset={preset}"]
         subprocess.run(initial_cmd, check=True, cwd=working_dir, capture_output=True, text=True)
 
-        # 2. Read compiler ID from CMakeCache.txt
+        # 2. Read compiler IDs from CMakeCache.txt
         cache_file = os.path.join(build_dir, "CMakeCache.txt")
-        compiler_id = None
+        c_compiler_id = None
+        cxx_compiler_id = None
         with open(cache_file, "r") as f:
             for line in f:
-                if line.startswith("CMAKE_CXX_COMPILER_ID"):
-                    compiler_id = line.split("=")[1].strip()
-                    break
+                if line.startswith("CMAKE_CXX_COMPILER_ID") and not cxx_compiler_id:
+                    val = line.split("=")[1].strip()
+                    cxx_compiler_id = val if val else None
+                elif line.startswith("CMAKE_C_COMPILER_ID") and not c_compiler_id:
+                    val = line.split("=")[1].strip()
+                    c_compiler_id = val if val else None
 
-        if not compiler_id:
-            return FailureResponse(summary="Could not determine compiler ID.").dict()
-
-        # 3. Set flags for structured diagnostics
+        # 3. Set flags for structured diagnostics (best-effort; skip if compiler unknown)
+        compiler_id = cxx_compiler_id or c_compiler_id
         diag_flags = ""
         if compiler_id in ["GNU", "Clang"]:
             diag_flags = "-fdiagnostics-format=json"
@@ -116,7 +118,10 @@ def configure_project(working_dir: str, preset: str, cmake_defines: Optional[Dic
         # 4. Final configure with diagnostic flags
         final_cmd = ["cmake", "-S", working_dir, "-B", build_dir, f"--preset={preset}"]
         if diag_flags:
-            final_cmd.append(f"-DCMAKE_CXX_FLAGS_INIT={diag_flags}")
+            if cxx_compiler_id:
+                final_cmd.append(f"-DCMAKE_CXX_FLAGS_INIT={diag_flags}")
+            if c_compiler_id:
+                final_cmd.append(f"-DCMAKE_C_FLAGS_INIT={diag_flags}")
 
         if cmake_defines:
             for key, value in cmake_defines.items():
