@@ -35,7 +35,7 @@ def check_environment(ctx: Context, working_dir: Optional[str] = None) -> dict:
     subsequent tool calls use it by default.
 
     Use this tool to validate a project directory before running
-    ``configure_project``, ``build_project``, or ``test_project``.
+    ``configure_preset``, ``build_preset``, or ``test_preset``.
     """
     result = core.check_environment(working_dir)
     update_state(result.get("is_healthy", False), result.get("working_directory"))
@@ -81,7 +81,7 @@ def list_presets(ctx: Context, working_dir: Optional[str] = None) -> dict:
 
 @mcp.tool
 @tool_guard
-def configure_project(
+def configure_preset(
     ctx: Context,
     preset: str,
     working_dir: Optional[str] = None,
@@ -94,7 +94,7 @@ def configure_project(
 
     Automatically detects the active compiler (GCC, Clang, or MSVC) and injects
     the appropriate structured-diagnostics flag so that compiler errors returned
-    by ``build_project`` are easier to parse.  Extra CMake cache variables can be
+    by ``build_preset`` are easier to parse.  Extra CMake cache variables can be
     supplied via ``cmake_defines`` (e.g. ``{"BUILD_TESTS": "ON"}``).
 
     The full configure log (stdout + stderr from both configure passes) is
@@ -106,14 +106,14 @@ def configure_project(
     the cut point indicating how many lines were stripped and the path to the
     file.
 
-    Run this before ``build_project`` when a build directory does not yet exist.
+    Run this before ``build_preset`` when a build directory does not yet exist.
     """
-    return core.configure_project(working_dir, preset, cmake_defines, head, tail)
+    return core.configure_preset(working_dir, preset, cmake_defines, head, tail)
 
 
 @mcp.tool
 @tool_guard
-def build_project(
+def build_preset(
     ctx: Context,
     preset: str,
     working_dir: Optional[str] = None,
@@ -142,12 +142,12 @@ def build_project(
     temporary file and a ``<build_output_striped>`` marker is inserted at the
     cut point indicating how many lines were stripped and the path to the file.
     """
-    return core.build_project(working_dir, preset, targets, verbose, parallel_jobs, head, tail)
+    return core.build_preset(working_dir, preset, targets, verbose, parallel_jobs, head, tail)
 
 
 @mcp.tool
 @tool_guard
-def test_project(
+def test_preset(
     ctx: Context,
     preset: str,
     working_dir: Optional[str] = None,
@@ -173,7 +173,84 @@ def test_project(
     temporary file and a ``<test_output_striped>`` marker is inserted at the
     cut point indicating how many lines were stripped and the path to the file.
     """
-    return core.test_project(working_dir, preset, test_filter, verbose, parallel_jobs, head, tail)
+    return core.test_preset(working_dir, preset, test_filter, verbose, parallel_jobs, head, tail)
+
+
+@mcp.tool
+@tool_guard
+def configure(
+    ctx: Context,
+    working_dir: Optional[str] = None,
+    build_dir: Optional[str] = None,
+    generator: Optional[str] = None,
+    cmake_defines: Optional[dict] = None,
+    head: Optional[int] = None,
+    tail: Optional[int] = None,
+) -> dict:
+    """
+    Configures a CMake project without using a preset.
+
+    The source directory is taken from ``working_dir`` (``-S``).  ``build_dir``
+    defaults to ``<working_dir>/build`` when not supplied (``-B``).  An optional
+    CMake generator can be requested via ``generator`` (e.g. ``"Ninja"`` or
+    ``"Unix Makefiles"``).
+
+    Automatically detects the active compiler (GCC, Clang, or MSVC) and injects
+    the appropriate structured-diagnostics flag so that compiler errors returned
+    by ``build`` are easier to parse.  Extra CMake cache variables can be
+    supplied via ``cmake_defines`` (e.g. ``{"BUILD_TESTS": "ON"}``).
+
+    The full configure log (stdout + stderr from both configure passes) is
+    always included in the ``configure_log`` field of the response.
+
+    Use ``head`` and/or ``tail`` to limit the number of log lines returned.
+    When a limit causes lines to be omitted, the complete log is saved to a
+    temporary file and a ``<configure_output_striped>`` marker is inserted at
+    the cut point indicating how many lines were stripped and the path to the
+    file.
+
+    Use this tool instead of ``configure_preset`` when the project has no
+    ``CMakePresets.json``.
+    """
+    return core.configure(working_dir, build_dir, generator, cmake_defines, head, tail)
+
+
+@mcp.tool
+@tool_guard
+def build(
+    ctx: Context,
+    working_dir: Optional[str] = None,
+    build_dir: Optional[str] = None,
+    targets: Optional[list[str]] = None,
+    verbose: bool = False,
+    parallel_jobs: Optional[int] = None,
+    head: Optional[int] = None,
+    tail: Optional[int] = None,
+) -> dict:
+    """
+    Builds a CMake project without using a preset.
+
+    ``build_dir`` defaults to ``<working_dir>/build`` when not supplied.  On
+    failure, returns a structured error report parsed from the compiler's
+    diagnostic output (JSON for GCC/Clang, SARIF for MSVC, plain text
+    otherwise).
+
+    The full build log (stdout + stderr) is always included in the
+    ``build_log`` field of the response.
+
+    Optionally restrict the build to specific ``targets``, enable verbose
+    compiler output with ``verbose``, or speed up the build with
+    ``parallel_jobs``.
+
+    Use ``head`` and/or ``tail`` to limit the number of log lines returned.
+    When a limit causes lines to be omitted, the complete log is saved to a
+    temporary file and a ``<build_output_striped>`` marker is inserted at the
+    cut point indicating how many lines were stripped and the path to the file.
+
+    Use this tool instead of ``build_preset`` when the project has no
+    ``CMakePresets.json``.
+    """
+    return core.build(working_dir, build_dir, targets, verbose, parallel_jobs, head, tail)
 
 
 def main():

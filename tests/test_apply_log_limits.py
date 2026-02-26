@@ -205,7 +205,7 @@ def _patch_subprocess_and_cache(initial_stdout="init\n", final_stdout="final\n",
 
 
 def test_configure_project_success_includes_configure_log():
-    from mcp_cmake.core import configure_project
+    from mcp_cmake.core import configure_preset
 
     initial_mock = _make_mock_run(stdout="-- Configuring pass 1\n", stderr="")
     final_mock = _make_mock_run(stdout="-- Configuring pass 2\n", stderr="", returncode=0)
@@ -219,7 +219,7 @@ def test_configure_project_success_includes_configure_log():
         patch("os.path.exists", return_value=True),
         patch("builtins.open", lambda path, *a, **kw: io.StringIO(cache_content)),
     ):
-        resp = configure_project("/fake/dir", "debug")
+        resp = configure_preset("/fake/dir", "debug")
 
     assert resp["success"] is True
     assert "configure_log" in resp
@@ -228,7 +228,7 @@ def test_configure_project_success_includes_configure_log():
 
 
 def test_configure_project_failure_includes_configure_log():
-    from mcp_cmake.core import configure_project
+    from mcp_cmake.core import configure_preset
 
     initial_mock = _make_mock_run(stdout="-- Configuring pass 1\n", stderr="")
     final_mock = _make_mock_run(stdout="", stderr="CMake Error: something went wrong\n", returncode=1)
@@ -242,7 +242,7 @@ def test_configure_project_failure_includes_configure_log():
         patch("os.path.exists", return_value=True),
         patch("builtins.open", lambda path, *a, **kw: io.StringIO(cache_content)),
     ):
-        resp = configure_project("/fake/dir", "debug")
+        resp = configure_preset("/fake/dir", "debug")
 
     assert resp["success"] is False
     assert "configure_log" in resp
@@ -250,7 +250,7 @@ def test_configure_project_failure_includes_configure_log():
 
 
 def test_configure_project_head_limit_applies_configure_tag():
-    from mcp_cmake.core import configure_project
+    from mcp_cmake.core import configure_preset
 
     many_lines = "".join(f"line {i}\n" for i in range(1, 21))
     initial_mock = _make_mock_run(stdout=many_lines, stderr="")
@@ -265,7 +265,7 @@ def test_configure_project_head_limit_applies_configure_tag():
         patch("os.path.exists", return_value=True),
         patch("builtins.open", lambda path, *a, **kw: io.StringIO(cache_content)),
     ):
-        resp = configure_project("/fake/dir", "debug", head=5)
+        resp = configure_preset("/fake/dir", "debug", head=5)
 
     assert "<configure_output_striped>" in resp["configure_log"]
 
@@ -276,11 +276,11 @@ def test_configure_project_head_limit_applies_configure_tag():
 
 
 def test_test_project_success_includes_test_log():
-    from mcp_cmake.core import test_project
+    from mcp_cmake.core import test_preset
 
     mock_result = _make_mock_run(stdout="100% tests passed\n", stderr="", returncode=0)
     with patch("subprocess.run", return_value=mock_result):
-        resp = test_project("/fake/dir", "debug")
+        resp = test_preset("/fake/dir", "debug")
 
     assert resp["success"] is True
     assert "test_log" in resp
@@ -288,11 +288,11 @@ def test_test_project_success_includes_test_log():
 
 
 def test_test_project_failure_includes_test_log():
-    from mcp_cmake.core import test_project
+    from mcp_cmake.core import test_preset
 
     mock_result = _make_mock_run(stdout="1/3 tests failed\n", stderr="", returncode=8)
     with patch("subprocess.run", return_value=mock_result):
-        resp = test_project("/fake/dir", "debug")
+        resp = test_preset("/fake/dir", "debug")
 
     assert resp["success"] is False
     assert "test_log" in resp
@@ -300,16 +300,188 @@ def test_test_project_failure_includes_test_log():
 
 
 def test_test_project_tail_limit_applies_test_tag():
-    from mcp_cmake.core import test_project
+    from mcp_cmake.core import test_preset
 
     many_lines = "".join(f"test {i}\n" for i in range(1, 21))
     mock_result = _make_mock_run(stdout=many_lines, stderr="", returncode=0)
     with patch("subprocess.run", return_value=mock_result):
-        resp = test_project("/fake/dir", "debug", tail=5)
+        resp = test_preset("/fake/dir", "debug", tail=5)
 
     assert "<test_output_striped>" in resp["test_log"]
     # Full log saved to a temp file — clean it up
     log = resp["test_log"]
+    start = log.index("`") + 1
+    end = log.index("`", start)
+    tmp_file = log[start:end]
+    if os.path.isfile(tmp_file):
+        os.unlink(tmp_file)
+
+
+# ---------------------------------------------------------------------------
+# configure (no-preset) log output (via mocked subprocess)
+# ---------------------------------------------------------------------------
+
+
+def test_configure_npreset_success_includes_configure_log():
+    from mcp_cmake.core import configure
+
+    initial_mock = _make_mock_run(stdout="-- Configuring done\n", stderr="")
+    final_mock = _make_mock_run(stdout="-- Build files written\n", stderr="", returncode=0)
+
+    import io
+
+    cache_content = "# empty cache\n"
+    with (
+        patch("subprocess.run", side_effect=[initial_mock, final_mock]),
+        patch("os.makedirs"),
+        patch("os.path.exists", return_value=True),
+        patch("builtins.open", lambda path, *a, **kw: io.StringIO(cache_content)),
+    ):
+        resp = configure("/fake/src")
+
+    assert resp["success"] is True
+    assert "configure_log" in resp
+    assert "-- Configuring done" in resp["configure_log"]
+    assert "-- Build files written" in resp["configure_log"]
+
+
+def test_configure_npreset_failure_includes_configure_log():
+    from mcp_cmake.core import configure
+
+    initial_mock = _make_mock_run(stdout="-- Configuring done\n", stderr="")
+    final_mock = _make_mock_run(stdout="", stderr="CMake Error: no such file\n", returncode=1)
+
+    import io
+
+    cache_content = "# empty cache\n"
+    with (
+        patch("subprocess.run", side_effect=[initial_mock, final_mock]),
+        patch("os.makedirs"),
+        patch("os.path.exists", return_value=True),
+        patch("builtins.open", lambda path, *a, **kw: io.StringIO(cache_content)),
+    ):
+        resp = configure("/fake/src")
+
+    assert resp["success"] is False
+    assert "configure_log" in resp
+    assert "CMake Error" in resp["configure_log"]
+
+
+def test_configure_npreset_uses_explicit_build_dir():
+    """Both cmake invocations must use the explicit build_dir, not the default."""
+    from mcp_cmake.core import configure
+
+    initial_mock = _make_mock_run(stdout="", stderr="")
+    final_mock = _make_mock_run(stdout="", stderr="", returncode=0)
+
+    import io
+
+    cache_content = "# empty cache\n"
+    captured_cmds = []
+    original_run = __import__("subprocess").run
+
+    def capturing_run(cmd, **kwargs):
+        captured_cmds.append(cmd)
+        return [initial_mock, final_mock][len(captured_cmds) - 1]
+
+    with (
+        patch("subprocess.run", side_effect=capturing_run),
+        patch("os.makedirs"),
+        patch("os.path.exists", return_value=True),
+        patch("builtins.open", lambda path, *a, **kw: io.StringIO(cache_content)),
+    ):
+        configure("/fake/src", build_dir="/custom/build")
+
+    assert "/custom/build" in captured_cmds[0]
+    assert "/custom/build" in captured_cmds[1]
+
+
+def test_configure_npreset_passes_generator():
+    """The -G flag must be forwarded to both cmake invocations."""
+    from mcp_cmake.core import configure
+
+    initial_mock = _make_mock_run(stdout="", stderr="")
+    final_mock = _make_mock_run(stdout="", stderr="", returncode=0)
+
+    import io
+
+    cache_content = "# empty cache\n"
+    captured_cmds = []
+
+    def capturing_run(cmd, **kwargs):
+        captured_cmds.append(cmd)
+        return [initial_mock, final_mock][len(captured_cmds) - 1]
+
+    with (
+        patch("subprocess.run", side_effect=capturing_run),
+        patch("os.makedirs"),
+        patch("os.path.exists", return_value=True),
+        patch("builtins.open", lambda path, *a, **kw: io.StringIO(cache_content)),
+    ):
+        configure("/fake/src", generator="Ninja")
+
+    assert "-G" in captured_cmds[0] and "Ninja" in captured_cmds[0]
+    assert "-G" in captured_cmds[1] and "Ninja" in captured_cmds[1]
+
+
+# ---------------------------------------------------------------------------
+# build (no-preset) log output (via mocked subprocess)
+# ---------------------------------------------------------------------------
+
+
+def test_build_npreset_success_includes_build_log():
+    from mcp_cmake.core import build
+
+    mock_result = _make_mock_run(stdout="[100%] Built target myapp\n", stderr="", returncode=0)
+    with patch("subprocess.run", return_value=mock_result):
+        resp = build("/fake/src")
+
+    assert resp["success"] is True
+    assert "build_log" in resp
+    assert "[100%] Built target myapp" in resp["build_log"]
+
+
+def test_build_npreset_failure_includes_build_log():
+    from mcp_cmake.core import build
+
+    mock_result = _make_mock_run(stdout="error: undeclared identifier\n", stderr="", returncode=1)
+    with (
+        patch("subprocess.run", return_value=mock_result),
+        patch("os.path.join", side_effect=os.path.join),
+    ):
+        resp = build("/fake/src")
+
+    assert resp["success"] is False
+    assert "build_log" in resp
+
+
+def test_build_npreset_uses_explicit_build_dir():
+    """cmake --build must receive the explicit build_dir."""
+    from mcp_cmake.core import build
+
+    mock_result = _make_mock_run(stdout="ok\n", stderr="", returncode=0)
+    captured_cmds = []
+
+    def capturing_run(cmd, **kwargs):
+        captured_cmds.append(cmd)
+        return mock_result
+
+    with patch("subprocess.run", side_effect=capturing_run):
+        build("/fake/src", build_dir="/custom/build")
+
+    assert captured_cmds[0][2] == "/custom/build"
+
+
+def test_build_npreset_head_limit_applies_build_tag():
+    from mcp_cmake.core import build
+
+    many_lines = "".join(f"build line {i}\n" for i in range(1, 21))
+    mock_result = _make_mock_run(stdout=many_lines, stderr="", returncode=0)
+    with patch("subprocess.run", return_value=mock_result):
+        resp = build("/fake/src", head=5)
+
+    assert "<build_output_striped>" in resp["build_log"]
+    log = resp["build_log"]
     start = log.index("`") + 1
     end = log.index("`", start)
     tmp_file = log[start:end]
