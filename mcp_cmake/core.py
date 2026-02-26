@@ -94,29 +94,58 @@ def configure_project(working_dir: str, preset: str, cmake_defines: Optional[Dic
         initial_cmd = ["cmake", "-S", working_dir, "-B", build_dir, f"--preset={preset}"]
         subprocess.run(initial_cmd, check=True, cwd=working_dir, capture_output=True, text=True)
 
-        # 2. Read compiler ID from CMakeCache.txt
+        # 2. Read compiler IDs and existing flag values from CMakeCache.txt.
+        # _INIT variables only take effect when the cache is first created, so we
+        # read the already-cached CMAKE_C_FLAGS / CMAKE_CXX_FLAGS and append the
+        # diagnostic flag to them on the second configure pass.
+        # Cache format: KEY:TYPE=VALUE — parse key exactly to avoid matching
+        # entries like CMAKE_CXX_COMPILER_ID-ADVANCED which share the same prefix.
         cache_file = os.path.join(build_dir, "CMakeCache.txt")
-        compiler_id = None
+        c_compiler_id = None
+        cxx_compiler_id = None
+        c_flags = ""
+        cxx_flags = ""
         with open(cache_file, "r") as f:
             for line in f:
-                if line.startswith("CMAKE_CXX_COMPILER_ID"):
-                    compiler_id = line.split("=")[1].strip()
-                    break
+                stripped = line.strip()
+                if stripped.startswith(("#", "//")) or "=" not in stripped:
+                    continue
+                key_and_type, value_part = stripped.split("=", 1)
+                if ":" not in key_and_type:
+                    continue
+                key, _ = key_and_type.split(":", 1)
+                val = value_part.strip()
+                if key == "CMAKE_CXX_COMPILER_ID" and not cxx_compiler_id:
+                    cxx_compiler_id = val if val else None
+                elif key == "CMAKE_C_COMPILER_ID" and not c_compiler_id:
+                    c_compiler_id = val if val else None
+                elif key == "CMAKE_CXX_FLAGS":
+                    cxx_flags = val
+                elif key == "CMAKE_C_FLAGS":
+                    c_flags = val
 
-        if not compiler_id:
-            return FailureResponse(summary="Could not determine compiler ID.").dict()
+        # 3. Compute diagnostic flags per language independently so that mixed
+        # toolchains (e.g. MSVC for C++, GNU for C) get the correct flag for each.
+        def _diag_flags_for(compiler: Optional[str]) -> str:
+            if compiler in ["GNU", "Clang"]:
+                return "-fdiagnostics-format=json"
+            if compiler == "MSVC":
+                return "/diagnostics:sarif"
+            return ""
 
-        # 3. Set flags for structured diagnostics
-        diag_flags = ""
-        if compiler_id in ["GNU", "Clang"]:
-            diag_flags = "-fdiagnostics-format=json"
-        elif compiler_id == "MSVC":
-            diag_flags = "/diagnostics:sarif"
+        cxx_diag_flags = _diag_flags_for(cxx_compiler_id)
+        c_diag_flags = _diag_flags_for(c_compiler_id)
 
-        # 4. Final configure with diagnostic flags
+        # 4. Final configure with diagnostic flags appended to any existing flags.
+        # Use CMAKE_C_FLAGS / CMAKE_CXX_FLAGS (not _INIT) so they take effect even
+        # when the cache already exists (e.g. toolchain-based presets).
         final_cmd = ["cmake", "-S", working_dir, "-B", build_dir, f"--preset={preset}"]
-        if diag_flags:
-            final_cmd.append(f"-DCMAKE_CXX_FLAGS_INIT={diag_flags}")
+        if cxx_diag_flags and cxx_compiler_id:
+            combined = f"{cxx_flags} {cxx_diag_flags}".strip()
+            final_cmd.append(f"-DCMAKE_CXX_FLAGS={combined}")
+        if c_diag_flags and c_compiler_id:
+            combined = f"{c_flags} {c_diag_flags}".strip()
+            final_cmd.append(f"-DCMAKE_C_FLAGS={combined}")
 
         if cmake_defines:
             for key, value in cmake_defines.items():
@@ -163,14 +192,28 @@ def build_project(
         if result.returncode == 0:
             return SuccessResponse().dict()
         else:
-            # Determine compiler to know the error format
+            # Determine compiler to know the error format.
+            # Prefer CMAKE_CXX_COMPILER_ID; fall back to CMAKE_C_COMPILER_ID for
+            # C-only and toolchain-based projects.
+            # Use exact key matching to avoid matching keys like CMAKE_CXX_COMPILER_ID-ADVANCED.
             cache_file = os.path.join(build_dir, "CMakeCache.txt")
             compiler_id = "Unknown"
             with open(cache_file, "r") as f:
                 for line in f:
-                    if line.startswith("CMAKE_CXX_COMPILER_ID"):
-                        compiler_id = line.split("=")[1].strip()
-                        break
+                    stripped = line.strip()
+                    if stripped.startswith(("#", "//")) or "=" not in stripped:
+                        continue
+                    key_and_type, value_part = stripped.split("=", 1)
+                    if ":" not in key_and_type:
+                        continue
+                    key, _ = key_and_type.split(":", 1)
+                    val = value_part.strip()
+                    if key == "CMAKE_CXX_COMPILER_ID" and val:
+                        compiler_id = val
+                        break  # CXX takes precedence; stop scanning
+                    elif key == "CMAKE_C_COMPILER_ID" and val and compiler_id == "Unknown":
+                        compiler_id = val
+                        # Don't break — keep scanning for CMAKE_CXX_COMPILER_ID
 
             error_format = "raw"
             if compiler_id in ["GNU", "Clang"]:
