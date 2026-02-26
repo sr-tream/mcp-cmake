@@ -30,6 +30,23 @@ uvx --from git+https://github.com/sr-tream/mcp-cmake mcp-cmake
 uvx --from git+https://github.com/sr-tream/mcp-cmake mcp-cmake -w /path/to/your/cmake/project
 ```
 
+To avoid typing the full URL every time, install the tool once with `uv tool install`:
+
+```bash
+# Install from GitHub
+uv tool install git+https://github.com/sr-tream/mcp-cmake
+
+# Or install from a local clone (run from the repository root)
+uv tool install .
+```
+
+After installation, run the server simply as:
+
+```bash
+mcp-cmake
+mcp-cmake -w /path/to/your/cmake/project
+```
+
 Or, from inside the cloned repository using `uv run`:
 
 ```bash

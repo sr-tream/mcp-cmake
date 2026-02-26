@@ -28,6 +28,23 @@ uvx --from git+https://github.com/sr-tream/mcp-cmake mcp-cmake
 uvx --from git+https://github.com/sr-tream/mcp-cmake mcp-cmake -w /path/to/your/cmake/project
 ```
 
+毎回URLを入力しなくて済むよう、`uv tool install` で一度インストールすることもできます：
+
+```bash
+# GitHubからインストール
+uv tool install git+https://github.com/sr-tream/mcp-cmake
+
+# または、ローカルのクローンからインストール（リポジトリルートで実行）
+uv tool install .
+```
+
+インストール後は、次のコマンドで直接起動できます：
+
+```bash
+mcp-cmake
+mcp-cmake -w /path/to/your/cmake/project
+```
+
 または、クローンしたリポジトリ内で `uv run` を使う場合：
 
 ```bash
