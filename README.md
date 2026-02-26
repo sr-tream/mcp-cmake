@@ -55,7 +55,7 @@ print(presets.text)
 # Output: ['default', 'ninja-multi-config', 'windows-msvc']
 ```
 
-### 3. `create_project`
+### 3. `configure_project`
 
 Configures the CMake project using a specified preset. This tool automatically detects the compiler and enables structured diagnostic logging (JSON for GCC/Clang, SARIF for MSVC).
 
@@ -66,7 +66,7 @@ Configures the CMake project using a specified preset. This tool automatically d
 
 **Example:**
 ```python
-client.call_tool("create_project", {"preset": "default"})
+client.call_tool("configure_project", {"preset": "default"})
 ```
 
 ### 4. `build_project`

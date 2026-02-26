@@ -70,7 +70,7 @@ def list_presets(working_dir: str) -> List[str]:
             return []
 
 
-def create_project(working_dir: str, preset: str, cmake_defines: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+def configure_project(working_dir: str, preset: str, cmake_defines: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     """
     Configures the CMake project.
     """
