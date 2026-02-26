@@ -1,5 +1,6 @@
 # mcp_cmake/server.py
 import argparse
+import functools
 import os
 from typing import Optional
 
@@ -8,11 +9,7 @@ from fastmcp import Context, FastMCP
 from . import core
 
 # Initialize the FastMCP server
-mcp = FastMCP(
-    "MCP-CMake Server",
-    description="A server for managing CMake projects.",
-    version="0.2.0",
-)
+mcp = FastMCP("MCP-CMake Server")
 
 # --- Server State ---
 WORKING_DIRECTORY: Optional[str] = None
@@ -54,6 +51,7 @@ def tool_guard(func):
     3. The current working directory (``os.getcwd()``).
     """
 
+    @functools.wraps(func)
     def wrapper(*args, **kwargs):
         wd = kwargs.get("working_dir")
         if wd is None:
