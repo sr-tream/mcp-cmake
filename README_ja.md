@@ -49,10 +49,10 @@ mcp-cmake -w /path/to/your/cmake/project
 
 ```bash
 # プロジェクトディレクトリを指定せずに実行
-uv run python -m mcp_cmake.server
+uv run mcp-cmake
 
 # 起動時にプロジェクトディレクトリを指定する場合
-uv run python -m mcp_cmake.server -w /path/to/your/cmake/project
+uv run mcp-cmake -w /path/to/your/cmake/project
 ```
 
 ### サーバーの状態

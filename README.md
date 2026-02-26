@@ -51,10 +51,10 @@ Or, from inside the cloned repository using `uv run`:
 
 ```bash
 # Run without a pre-configured project
-uv run python -m mcp_cmake.server
+uv run mcp-cmake
 
 # Pre-configure a project directory at startup
-uv run python -m mcp_cmake.server -w /path/to/your/cmake/project
+uv run mcp-cmake -w /path/to/your/cmake/project
 ```
 
 ### Working Directory Resolution

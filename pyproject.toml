@@ -6,7 +6,7 @@ requires-python = ">=3.12"
 dependencies = ["fastmcp"]
 
 [project.scripts]
-mcp-cmake = "mcp_cmake.mcp_cmake_server:main"
+mcp-cmake = "mcp_cmake.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["mcp_cmake"]
