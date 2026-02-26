@@ -20,14 +20,14 @@ python -m mcp_cmake.server -w /path/to/your/cmake/project
 
 #### Using uv / uvx
 
-If you have [uv](https://docs.astral.sh/uv/) installed, you can run the server directly without a manual installation step:
+If you have [uv](https://docs.astral.sh/uv/) installed, you can run the server directly from the GitHub repository:
 
 ```bash
-# Run via uvx (no prior installation needed)
-uvx mcp-cmake
+# Run via uvx directly from GitHub
+uvx --from git+https://github.com/sr-tream/mcp-cmake mcp-cmake
 
 # Pre-configure a project directory at startup
-uvx mcp-cmake -w /path/to/your/cmake/project
+uvx --from git+https://github.com/sr-tream/mcp-cmake mcp-cmake -w /path/to/your/cmake/project
 ```
 
 Or, from inside the cloned repository using `uv run`:

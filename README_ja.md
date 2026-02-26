@@ -18,14 +18,14 @@ python -m mcp_cmake.server -w /path/to/your/cmake/project
 
 #### uv / uvx を使用する場合
 
-[uv](https://docs.astral.sh/uv/) がインストール済みであれば、手動インストールなしにサーバーを直接実行できます：
+[uv](https://docs.astral.sh/uv/) がインストール済みであれば、GitHubリポジトリから直接サーバーを実行できます：
 
 ```bash
-# uvx で実行（事前インストール不要）
-uvx mcp-cmake
+# GitHubから直接 uvx で実行
+uvx --from git+https://github.com/sr-tream/mcp-cmake mcp-cmake
 
 # 起動時にプロジェクトディレクトリを指定する場合
-uvx mcp-cmake -w /path/to/your/cmake/project
+uvx --from git+https://github.com/sr-tream/mcp-cmake mcp-cmake -w /path/to/your/cmake/project
 ```
 
 または、クローンしたリポジトリ内で `uv run` を使う場合：
