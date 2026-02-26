@@ -66,13 +66,15 @@ def tool_guard(func):
 
 @mcp.tool
 @tool_guard
-def list_presets(ctx: Context, working_dir: Optional[str] = None) -> list[str]:
+def list_presets(ctx: Context, working_dir: Optional[str] = None) -> dict:
     """
-    Lists the configure preset names defined in ``CMakePresets.json``.
+    Lists all available preset names grouped by type (configure, build, test,
+    workflow) by delegating to ``cmake --list-presets``.
 
-    Returns an empty list when the file is absent or contains no
-    ``configurePresets``.  Use the returned names as the ``preset`` argument for
-    ``configure_project``, ``build_project``, and ``test_project``.
+    Presets from both ``CMakePresets.json`` and ``CMakeUserPresets.json`` are
+    included automatically.  Returns a dict whose keys are preset types and
+    whose values are lists of preset names, e.g.
+    ``{"configure": ["debug", "release"], "build": ["debug"], ...}``.
     """
     return core.list_presets(working_dir)
 
