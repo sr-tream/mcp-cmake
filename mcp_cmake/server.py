@@ -28,12 +28,19 @@ def update_state(healthy: bool, working_dir: Optional[str] = None):
 
 
 @mcp.tool
-def health_check(ctx: Context, working_dir: Optional[str] = None) -> dict:
+def check_environment(ctx: Context, working_dir: Optional[str] = None) -> dict:
     """
-    Checks the development environment's health, updates server state, and
-    optionally sets a new working directory.
+    Verifies the development environment for a CMake project.
+
+    Checks that the ``cmake`` and ``ctest`` executables are available on PATH and
+    that a ``CMakePresets.json`` file exists in the project directory.  If
+    ``working_dir`` is provided the global working directory is updated so that
+    subsequent tool calls use it by default.
+
+    Use this tool to validate a project directory before running
+    ``configure_project``, ``build_project``, or ``test_project``.
     """
-    result = core.health_check(working_dir)
+    result = core.check_environment(working_dir)
     update_state(result.get("is_healthy", False), result.get("working_directory"))
     return result
 
@@ -43,7 +50,7 @@ def tool_guard(func):
 
     Resolution order:
     1. ``working_dir`` passed explicitly in the tool call.
-    2. The global ``WORKING_DIRECTORY`` set via ``health_check`` or ``-w``.
+    2. The global ``WORKING_DIRECTORY`` set via ``check_environment`` or ``-w``.
     3. The current working directory (``os.getcwd()``).
     """
 
@@ -62,14 +69,29 @@ def tool_guard(func):
 @mcp.tool
 @tool_guard
 def list_presets(ctx: Context, working_dir: Optional[str] = None) -> list[str]:
-    """Lists available configure presets."""
+    """
+    Lists the configure preset names defined in ``CMakePresets.json``.
+
+    Returns an empty list when the file is absent or contains no
+    ``configurePresets``.  Use the returned names as the ``preset`` argument for
+    ``configure_project``, ``build_project``, and ``test_project``.
+    """
     return core.list_presets(working_dir)
 
 
 @mcp.tool
 @tool_guard
 def configure_project(ctx: Context, preset: str, working_dir: Optional[str] = None, cmake_defines: Optional[dict] = None) -> dict:
-    """Configures the CMake project."""
+    """
+    Configures a CMake project using the named configure preset.
+
+    Automatically detects the active compiler (GCC, Clang, or MSVC) and injects
+    the appropriate structured-diagnostics flag so that compiler errors returned
+    by ``build_project`` are easier to parse.  Extra CMake cache variables can be
+    supplied via ``cmake_defines`` (e.g. ``{"BUILD_TESTS": "ON"}``).
+
+    Run this before ``build_project`` when a build directory does not yet exist.
+    """
     return core.configure_project(working_dir, preset, cmake_defines)
 
 
@@ -83,7 +105,17 @@ def build_project(
     verbose: bool = False,
     parallel_jobs: Optional[int] = None,
 ) -> dict:
-    """Builds the project."""
+    """
+    Builds the CMake project using the named build preset.
+
+    On failure, returns a structured error report parsed from the compiler's
+    diagnostic output (JSON for GCC/Clang, SARIF for MSVC, plain text
+    otherwise) so that errors can be analysed programmatically.
+
+    Optionally restrict the build to specific ``targets``, enable verbose
+    compiler output with ``verbose``, or speed up the build with
+    ``parallel_jobs``.
+    """
     return core.build_project(working_dir, preset, targets, verbose, parallel_jobs)
 
 
@@ -97,7 +129,14 @@ def test_project(
     verbose: bool = False,
     parallel_jobs: Optional[int] = None,
 ) -> dict:
-    """Runs tests for the project."""
+    """
+    Runs the project's test suite via CTest using the named test preset.
+
+    Optionally narrow the run to tests whose names match a regex with
+    ``test_filter``, enable verbose CTest output with ``verbose``, or run tests
+    in parallel with ``parallel_jobs``.  The project must be built before tests
+    can be run.
+    """
     return core.test_project(working_dir, preset, test_filter, verbose, parallel_jobs)
 
 
@@ -123,10 +162,10 @@ def main():
     if args.working_dir:
         initial_dir = os.path.abspath(args.working_dir)
         print(f"Initializing with working directory: {initial_dir}")
-        # Run initial health check
-        result = core.health_check(initial_dir)
+        # Run initial environment check
+        result = core.check_environment(initial_dir)
         update_state(result.get("is_healthy", False), result.get("working_directory"))
-        print(f"Initial health check {'succeeded' if IS_HEALTHY else 'failed'}.")
+        print(f"Initial environment check {'succeeded' if IS_HEALTHY else 'failed'}.")
 
     # FastMCP's run method can handle the transport arguments directly
     if args.http:

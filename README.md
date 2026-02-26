@@ -23,37 +23,39 @@ python -m mcp_cmake.server -w /path/to/your/cmake/project
 Each tool resolves its working directory in the following order:
 
 1. The `working_dir` argument passed directly in the tool call.
-2. The global `WORKING_DIRECTORY` set via `health_check` or the `-w` startup flag.
+2. The global `WORKING_DIRECTORY` set via `check_environment` or the `-w` startup flag.
 3. The server process's current working directory (`os.getcwd()`).
 
 ### Server State
 
 The server maintains two internal states:
 -   `WORKING_DIRECTORY`: The absolute path to the CMake project being managed (optional).
--   `IS_HEALTHY`: A boolean flag updated by `health_check`. Tools no longer require this to be `true` — they resolve the working directory independently.
+-   `IS_HEALTHY`: A boolean flag updated by `check_environment`. Tools no longer require this to be `true` — they resolve the working directory independently.
 
 ## 🛠️ Available Tools
 
-### 1. `health_check`
+### 1. `check_environment`
 
-Verifies the development environment and sets the server to a `Healthy` state if successful. This tool can also be used to switch the working directory to a new project.
+Verifies the development environment for a CMake project. Checks that `cmake` and `ctest` are available on `PATH` and that a `CMakePresets.json` file exists in the project directory. If `working_dir` is provided the global working directory is updated for subsequent tool calls.
+
+Use this tool to validate a project directory before running `configure_project`, `build_project`, or `test_project`.
 
 -   **Arguments:**
-    -   `working_dir` (Optional[str]): The absolute path to a CMake project directory. If provided, the server will switch to this directory.
--   **Returns:** A dictionary containing the check results.
+    -   `working_dir` (Optional[str]): Path to the CMake project directory. Updates the global working directory when supplied.
+-   **Returns:** A dictionary with check results and an `is_healthy` flag.
 
 **Example:**
 ```python
-# Run a health check on the current working directory
-client.call_tool("health_check")
+# Check the current working directory
+client.call_tool("check_environment")
 
-# Switch to a new project and check its health
-client.call_tool("health_check", {"working_dir": "/path/to/another/project"})
+# Validate a specific project and make it the active directory
+client.call_tool("check_environment", {"working_dir": "/path/to/project"})
 ```
 
 ### 2. `list_presets`
 
-Lists the available `configurePresets` from the `CMakePresets.json` file in the working directory.
+Lists the configure preset names defined in `CMakePresets.json`. Returns an empty list when the file is absent or contains no `configurePresets`. Use the returned names as the `preset` argument for `configure_project`, `build_project`, and `test_project`.
 
 -   **Arguments:**
     -   `working_dir` (Optional[str]): Override the working directory for this call.
@@ -70,7 +72,7 @@ print(presets.text)
 
 ### 3. `configure_project`
 
-Configures the CMake project using a specified preset. This tool automatically detects the compiler and enables structured diagnostic logging (JSON for GCC/Clang, SARIF for MSVC).
+Configures a CMake project using the named configure preset. Automatically detects the active compiler (GCC, Clang, or MSVC) and injects the appropriate structured-diagnostics flag so that compiler errors returned by `build_project` are easier to parse. Extra CMake cache variables can be supplied via `cmake_defines`. Run this before `build_project` when a build directory does not yet exist.
 
 -   **Arguments:**
     -   `preset` (str): The name of the configure preset to use.
@@ -87,7 +89,7 @@ client.call_tool("configure_project", {"preset": "default", "working_dir": "/pat
 
 ### 4. `build_project`
 
-Builds the project using a specified build preset. If the build fails, it returns a structured error report parsed from the compiler's output.
+Builds the CMake project using the named build preset. On failure, returns a structured error report parsed from the compiler's diagnostic output (JSON for GCC/Clang, SARIF for MSVC, plain text otherwise) so that errors can be analysed programmatically.
 
 -   **Arguments:**
     -   `preset` (str): The name of the build preset to use.
@@ -111,7 +113,7 @@ client.call_tool("build_project", {"preset": "default", "working_dir": "/path/to
 
 ### 5. `test_project`
 
-Runs tests for the project using a specified test preset.
+Runs the project's test suite via CTest using the named test preset. Optionally narrows the run to tests whose names match a regex with `test_filter`, enables verbose CTest output, or runs tests in parallel. The project must be built before tests can be run.
 
 -   **Arguments:**
     -   `preset` (str): The name of the test preset to use.
