@@ -81,7 +81,14 @@ def list_presets(ctx: Context, working_dir: Optional[str] = None) -> dict:
 
 @mcp.tool
 @tool_guard
-def configure_project(ctx: Context, preset: str, working_dir: Optional[str] = None, cmake_defines: Optional[dict] = None) -> dict:
+def configure_project(
+    ctx: Context,
+    preset: str,
+    working_dir: Optional[str] = None,
+    cmake_defines: Optional[dict] = None,
+    head: Optional[int] = None,
+    tail: Optional[int] = None,
+) -> dict:
     """
     Configures a CMake project using the named configure preset.
 
@@ -90,9 +97,18 @@ def configure_project(ctx: Context, preset: str, working_dir: Optional[str] = No
     by ``build_project`` are easier to parse.  Extra CMake cache variables can be
     supplied via ``cmake_defines`` (e.g. ``{"BUILD_TESTS": "ON"}``).
 
+    The full configure log (stdout + stderr from both configure passes) is
+    always included in the ``configure_log`` field of the response.
+
+    Use ``head`` and/or ``tail`` to limit the number of log lines returned.
+    When a limit causes lines to be omitted, the complete log is saved to a
+    temporary file and a ``<configure_output_striped>`` marker is inserted at
+    the cut point indicating how many lines were stripped and the path to the
+    file.
+
     Run this before ``build_project`` when a build directory does not yet exist.
     """
-    return core.configure_project(working_dir, preset, cmake_defines)
+    return core.configure_project(working_dir, preset, cmake_defines, head, tail)
 
 
 @mcp.tool
@@ -138,16 +154,26 @@ def test_project(
     test_filter: Optional[str] = None,
     verbose: bool = False,
     parallel_jobs: Optional[int] = None,
+    head: Optional[int] = None,
+    tail: Optional[int] = None,
 ) -> dict:
     """
     Runs the project's test suite via CTest using the named test preset.
+
+    The full test log (stdout + stderr) is always included in the ``test_log``
+    field of the response.
 
     Optionally narrow the run to tests whose names match a regex with
     ``test_filter``, enable verbose CTest output with ``verbose``, or run tests
     in parallel with ``parallel_jobs``.  The project must be built before tests
     can be run.
+
+    Use ``head`` and/or ``tail`` to limit the number of log lines returned.
+    When a limit causes lines to be omitted, the complete log is saved to a
+    temporary file and a ``<test_output_striped>`` marker is inserted at the
+    cut point indicating how many lines were stripped and the path to the file.
     """
-    return core.test_project(working_dir, preset, test_filter, verbose, parallel_jobs)
+    return core.test_project(working_dir, preset, test_filter, verbose, parallel_jobs, head, tail)
 
 
 def main():

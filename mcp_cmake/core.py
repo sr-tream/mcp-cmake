@@ -82,15 +82,12 @@ def list_presets(working_dir: str) -> Dict[str, List[str]]:
     return result
 
 
-def _apply_log_limits(log: str, head: Optional[int], tail: Optional[int]) -> str:
+def _apply_log_limits(log: str, head: Optional[int], tail: Optional[int], tag: str = "build_output_striped") -> str:
     """Return *log* optionally trimmed to *head* first and/or *tail* last lines.
 
-    When any lines are omitted a ``<build_output_striped>`` marker is inserted
-    at the cut point and the full log is preserved in a temporary file whose
-    path is embedded in the marker.
-
-    Note: the marker tag name ``build_output_striped`` is intentional and
-    matches the format specified in the project requirements.
+    When any lines are omitted a ``<{tag}>`` marker is inserted at the cut
+    point and the full log is preserved in a temporary file whose path is
+    embedded in the marker.
     """
     if head is None and tail is None:
         return log
@@ -116,9 +113,9 @@ def _apply_log_limits(log: str, head: Optional[int], tail: Optional[int]) -> str
         fh.write(log)
 
     marker = (
-        f"<build_output_striped>Here stripped {stripped_count} lines, "
+        f"<{tag}>Here stripped {stripped_count} lines, "
         f"due to head/tail output limits. "
-        f"You can find full log in file `{tmp_path}`</build_output_striped>"
+        f"You can find full log in file `{tmp_path}`</{tag}>"
     )
 
     if head is not None and tail is not None:
@@ -133,7 +130,13 @@ def _apply_log_limits(log: str, head: Optional[int], tail: Optional[int]) -> str
     return "".join(parts)
 
 
-def configure_project(working_dir: str, preset: str, cmake_defines: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+def configure_project(
+    working_dir: str,
+    preset: str,
+    cmake_defines: Optional[Dict[str, str]] = None,
+    head: Optional[int] = None,
+    tail: Optional[int] = None,
+) -> Dict[str, Any]:
     """
     Configures the CMake project.
     """
@@ -144,7 +147,8 @@ def configure_project(working_dir: str, preset: str, cmake_defines: Optional[Dic
             os.makedirs(build_dir)
 
         initial_cmd = ["cmake", "-S", working_dir, "-B", build_dir, f"--preset={preset}"]
-        subprocess.run(initial_cmd, check=True, cwd=working_dir, capture_output=True, text=True)
+        initial_result = subprocess.run(initial_cmd, check=True, cwd=working_dir, capture_output=True, text=True)
+        initial_log = initial_result.stdout + initial_result.stderr
 
         # 2. Read compiler IDs and existing flag values from CMakeCache.txt.
         # _INIT variables only take effect when the cache is first created, so we
@@ -191,6 +195,8 @@ def configure_project(working_dir: str, preset: str, cmake_defines: Optional[Dic
         # 4. Final configure with diagnostic flags appended to any existing flags.
         # Use CMAKE_C_FLAGS / CMAKE_CXX_FLAGS (not _INIT) so they take effect even
         # when the cache already exists (e.g. toolchain-based presets).
+        # Note: check=True is intentionally omitted here so that a non-zero
+        # returncode can be returned with configure_log included in the response.
         final_cmd = ["cmake", "-S", working_dir, "-B", build_dir, f"--preset={preset}"]
         if cxx_diag_flags and cxx_compiler_id:
             combined = f"{cxx_flags} {cxx_diag_flags}".strip()
@@ -203,14 +209,22 @@ def configure_project(working_dir: str, preset: str, cmake_defines: Optional[Dic
             for key, value in cmake_defines.items():
                 final_cmd.append(f"-D{key}={value}")
 
-        result = subprocess.run(final_cmd, check=True, cwd=working_dir, capture_output=True, text=True)
+        result = subprocess.run(final_cmd, cwd=working_dir, capture_output=True, text=True)
+
+        configure_log = _apply_log_limits(
+            initial_log + result.stdout + result.stderr, head, tail, tag="configure_output_striped"
+        )
 
         if result.returncode == 0:
-            return SuccessResponse().dict()
+            response = SuccessResponse().dict()
+            response["configure_log"] = configure_log
+            return response
         else:
-            return FailureResponse(
+            response = FailureResponse(
                 summary="CMake configuration failed.", errors=[ErrorDetail(message=result.stderr, severity="error")]
             ).dict()
+            response["configure_log"] = configure_log
+            return response
 
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
         error_message = e.stderr if isinstance(e, subprocess.CalledProcessError) else str(e)
@@ -295,6 +309,8 @@ def test_project(
     test_filter: Optional[str] = None,
     verbose: bool = False,
     parallel_jobs: Optional[int] = None,
+    head: Optional[int] = None,
+    tail: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Runs tests for the project.
@@ -311,13 +327,19 @@ def test_project(
 
         result = subprocess.run(cmd, cwd=build_dir, capture_output=True, text=True)
 
+        test_log = _apply_log_limits(result.stdout + result.stderr, head, tail, tag="test_output_striped")
+
         if result.returncode == 0:
-            return SuccessResponse(message="All tests passed.").dict()
+            response = SuccessResponse(message="All tests passed.").dict()
+            response["test_log"] = test_log
+            return response
         else:
             # CTest output is not structured, so we treat it as raw text.
-            return FailureResponse(
+            response = FailureResponse(
                 summary="Tests failed.", errors=[ErrorDetail(message=result.stdout + result.stderr, severity="error")]
             ).dict()
+            response["test_log"] = test_log
+            return response
 
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
         error_message = e.stderr if isinstance(e, subprocess.CalledProcessError) else str(e)

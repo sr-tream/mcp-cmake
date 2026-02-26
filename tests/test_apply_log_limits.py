@@ -1,6 +1,7 @@
 # tests/test_apply_log_limits.py
 
 import os
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -149,4 +150,168 @@ def test_full_log_written_to_tmp_file():
         with open(tmp_file) as fh:
             assert fh.read() == log
     finally:
+        os.unlink(tmp_file)
+
+
+# ---------------------------------------------------------------------------
+# Custom tag parameter
+# ---------------------------------------------------------------------------
+
+
+def test_custom_tag_used_in_marker():
+    log = _make_log(10)
+    result = _apply_log_limits(log, head=3, tail=None, tag="configure_output_striped")
+    assert "<configure_output_striped>" in result
+    assert "</configure_output_striped>" in result
+    assert "<build_output_striped>" not in result
+
+
+def test_custom_tag_test_output_striped():
+    log = _make_log(10)
+    result = _apply_log_limits(log, head=3, tail=None, tag="test_output_striped")
+    assert "<test_output_striped>" in result
+    assert "</test_output_striped>" in result
+
+
+# ---------------------------------------------------------------------------
+# configure_project log output (via mocked subprocess)
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_run(stdout="", stderr="", returncode=0):
+    mock = MagicMock()
+    mock.stdout = stdout
+    mock.stderr = stderr
+    mock.returncode = returncode
+    return mock
+
+
+def _patch_subprocess_and_cache(initial_stdout="init\n", final_stdout="final\n", final_returncode=0):
+    """Return a context manager that stubs out subprocess.run and open(CMakeCache.txt)."""
+    import io
+
+    initial_mock = _make_mock_run(stdout=initial_stdout, stderr="")
+    final_mock = _make_mock_run(stdout=final_stdout, stderr="", returncode=final_returncode)
+    # subprocess.run is called twice: initial configure then final configure
+    run_side_effects = [initial_mock, final_mock]
+
+    # Minimal CMakeCache.txt content – no compilers detected keeps diag flags empty
+    cache_content = "# CMake cache\n"
+    fake_open = patch("builtins.open", lambda path, *a, **kw: io.StringIO(cache_content))
+    fake_makedirs = patch("os.makedirs")
+    fake_exists = patch("os.path.exists", return_value=True)
+    fake_run = patch("subprocess.run", side_effect=run_side_effects)
+    return fake_makedirs, fake_exists, fake_run, fake_open
+
+
+def test_configure_project_success_includes_configure_log():
+    from mcp_cmake.core import configure_project
+
+    initial_mock = _make_mock_run(stdout="-- Configuring pass 1\n", stderr="")
+    final_mock = _make_mock_run(stdout="-- Configuring pass 2\n", stderr="", returncode=0)
+
+    import io
+
+    cache_content = "# empty cache\n"
+    with (
+        patch("subprocess.run", side_effect=[initial_mock, final_mock]),
+        patch("os.makedirs"),
+        patch("os.path.exists", return_value=True),
+        patch("builtins.open", lambda path, *a, **kw: io.StringIO(cache_content)),
+    ):
+        resp = configure_project("/fake/dir", "debug")
+
+    assert resp["success"] is True
+    assert "configure_log" in resp
+    assert "-- Configuring pass 1" in resp["configure_log"]
+    assert "-- Configuring pass 2" in resp["configure_log"]
+
+
+def test_configure_project_failure_includes_configure_log():
+    from mcp_cmake.core import configure_project
+
+    initial_mock = _make_mock_run(stdout="-- Configuring pass 1\n", stderr="")
+    final_mock = _make_mock_run(stdout="", stderr="CMake Error: something went wrong\n", returncode=1)
+
+    import io
+
+    cache_content = "# empty cache\n"
+    with (
+        patch("subprocess.run", side_effect=[initial_mock, final_mock]),
+        patch("os.makedirs"),
+        patch("os.path.exists", return_value=True),
+        patch("builtins.open", lambda path, *a, **kw: io.StringIO(cache_content)),
+    ):
+        resp = configure_project("/fake/dir", "debug")
+
+    assert resp["success"] is False
+    assert "configure_log" in resp
+    assert "CMake Error" in resp["configure_log"]
+
+
+def test_configure_project_head_limit_applies_configure_tag():
+    from mcp_cmake.core import configure_project
+
+    many_lines = "".join(f"line {i}\n" for i in range(1, 21))
+    initial_mock = _make_mock_run(stdout=many_lines, stderr="")
+    final_mock = _make_mock_run(stdout=many_lines, stderr="", returncode=0)
+
+    import io
+
+    cache_content = "# empty cache\n"
+    with (
+        patch("subprocess.run", side_effect=[initial_mock, final_mock]),
+        patch("os.makedirs"),
+        patch("os.path.exists", return_value=True),
+        patch("builtins.open", lambda path, *a, **kw: io.StringIO(cache_content)),
+    ):
+        resp = configure_project("/fake/dir", "debug", head=5)
+
+    assert "<configure_output_striped>" in resp["configure_log"]
+
+
+# ---------------------------------------------------------------------------
+# test_project log output (via mocked subprocess)
+# ---------------------------------------------------------------------------
+
+
+def test_test_project_success_includes_test_log():
+    from mcp_cmake.core import test_project
+
+    mock_result = _make_mock_run(stdout="100% tests passed\n", stderr="", returncode=0)
+    with patch("subprocess.run", return_value=mock_result):
+        resp = test_project("/fake/dir", "debug")
+
+    assert resp["success"] is True
+    assert "test_log" in resp
+    assert "100% tests passed" in resp["test_log"]
+
+
+def test_test_project_failure_includes_test_log():
+    from mcp_cmake.core import test_project
+
+    mock_result = _make_mock_run(stdout="1/3 tests failed\n", stderr="", returncode=8)
+    with patch("subprocess.run", return_value=mock_result):
+        resp = test_project("/fake/dir", "debug")
+
+    assert resp["success"] is False
+    assert "test_log" in resp
+    assert "1/3 tests failed" in resp["test_log"]
+
+
+def test_test_project_tail_limit_applies_test_tag():
+    from mcp_cmake.core import test_project
+
+    many_lines = "".join(f"test {i}\n" for i in range(1, 21))
+    mock_result = _make_mock_run(stdout=many_lines, stderr="", returncode=0)
+    with patch("subprocess.run", return_value=mock_result):
+        resp = test_project("/fake/dir", "debug", tail=5)
+
+    assert "<test_output_striped>" in resp["test_log"]
+    # Full log saved to a temp file — clean it up
+    log = resp["test_log"]
+    start = log.index("`") + 1
+    end = log.index("`", start)
+    tmp_file = log[start:end]
+    if os.path.isfile(tmp_file):
         os.unlink(tmp_file)
