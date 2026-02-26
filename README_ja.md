@@ -16,6 +16,28 @@ python -m mcp_cmake.server -w /path/to/your/cmake/project
 
 サーバーが起動すると、最初のヘルスチェックが実行されます。成功すると、サーバーは `Healthy` 状態になり、ツール呼び出しを受け入れる準備が整います。
 
+#### uv / uvx を使用する場合
+
+[uv](https://docs.astral.sh/uv/) がインストール済みであれば、手動インストールなしにサーバーを直接実行できます：
+
+```bash
+# uvx で実行（事前インストール不要）
+uvx mcp-cmake
+
+# 起動時にプロジェクトディレクトリを指定する場合
+uvx mcp-cmake -w /path/to/your/cmake/project
+```
+
+または、クローンしたリポジトリ内で `uv run` を使う場合：
+
+```bash
+# プロジェクトディレクトリを指定せずに実行
+uv run python -m mcp_cmake.server
+
+# 起動時にプロジェクトディレクトリを指定する場合
+uv run python -m mcp_cmake.server -w /path/to/your/cmake/project
+```
+
 ### サーバーの状態
 
 サーバーは2つの内部状態を維持します：

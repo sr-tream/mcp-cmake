@@ -18,6 +18,28 @@ python -m mcp_cmake.server
 python -m mcp_cmake.server -w /path/to/your/cmake/project
 ```
 
+#### Using uv / uvx
+
+If you have [uv](https://docs.astral.sh/uv/) installed, you can run the server directly without a manual installation step:
+
+```bash
+# Run via uvx (no prior installation needed)
+uvx mcp-cmake
+
+# Pre-configure a project directory at startup
+uvx mcp-cmake -w /path/to/your/cmake/project
+```
+
+Or, from inside the cloned repository using `uv run`:
+
+```bash
+# Run without a pre-configured project
+uv run python -m mcp_cmake.server
+
+# Pre-configure a project directory at startup
+uv run python -m mcp_cmake.server -w /path/to/your/cmake/project
+```
+
 ### Working Directory Resolution
 
 Each tool resolves its working directory in the following order:
