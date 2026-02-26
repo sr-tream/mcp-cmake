@@ -6,7 +6,6 @@ from typing import Optional
 from fastmcp import Context, FastMCP
 
 from . import core
-from .models import FailureResponse
 
 # Initialize the FastMCP server
 mcp = FastMCP(
@@ -40,16 +39,21 @@ def health_check(ctx: Context, working_dir: Optional[str] = None) -> dict:
 
 
 def tool_guard(func):
-    """Decorator to ensure the server is healthy before running a tool."""
+    """Decorator that resolves the working directory for a tool call.
+
+    Resolution order:
+    1. ``working_dir`` passed explicitly in the tool call.
+    2. The global ``WORKING_DIRECTORY`` set via ``health_check`` or ``-w``.
+    3. The current working directory (``os.getcwd()``).
+    """
 
     def wrapper(*args, **kwargs):
-        if not IS_HEALTHY:
-            return FailureResponse(
-                summary="Server is not in a healthy state.",
-                errors=[{"message": "Run health_check first.", "severity": "error"}],
-            ).dict()
-        # Set the working directory for the core functions
-        kwargs["working_dir"] = WORKING_DIRECTORY
+        wd = kwargs.get("working_dir")
+        if wd is None:
+            wd = WORKING_DIRECTORY
+        if wd is None:
+            wd = os.getcwd()
+        kwargs["working_dir"] = wd
         return func(*args, **kwargs)
 
     return wrapper
@@ -57,14 +61,14 @@ def tool_guard(func):
 
 @mcp.tool
 @tool_guard
-def list_presets(ctx: Context, working_dir: str) -> list[str]:
+def list_presets(ctx: Context, working_dir: Optional[str] = None) -> list[str]:
     """Lists available configure presets."""
     return core.list_presets(working_dir)
 
 
 @mcp.tool
 @tool_guard
-def configure_project(ctx: Context, working_dir: str, preset: str, cmake_defines: Optional[dict] = None) -> dict:
+def configure_project(ctx: Context, preset: str, working_dir: Optional[str] = None, cmake_defines: Optional[dict] = None) -> dict:
     """Configures the CMake project."""
     return core.configure_project(working_dir, preset, cmake_defines)
 
@@ -73,8 +77,8 @@ def configure_project(ctx: Context, working_dir: str, preset: str, cmake_defines
 @tool_guard
 def build_project(
     ctx: Context,
-    working_dir: str,
     preset: str,
+    working_dir: Optional[str] = None,
     targets: Optional[list[str]] = None,
     verbose: bool = False,
     parallel_jobs: Optional[int] = None,
@@ -87,8 +91,8 @@ def build_project(
 @tool_guard
 def test_project(
     ctx: Context,
-    working_dir: str,
     preset: str,
+    working_dir: Optional[str] = None,
     test_filter: Optional[str] = None,
     verbose: bool = False,
     parallel_jobs: Optional[int] = None,

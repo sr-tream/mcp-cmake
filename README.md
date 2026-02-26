@@ -8,19 +8,29 @@ MCP-CMake provides a set of tools to manage CMake-based projects through the Mod
 
 ### Server Setup
 
-The MCP-CMake server needs to be started with a path to your CMake project's root directory. This directory must contain a `CMakePresets.json` file.
+Start the MCP-CMake server. No arguments are required — the working directory can be supplied at startup or via individual tool calls.
 
 ```bash
+# Start without a pre-configured project (working directory resolved per tool call)
+python -m mcp_cmake.server
+
+# Or pre-configure a project directory at startup (optional)
 python -m mcp_cmake.server -w /path/to/your/cmake/project
 ```
 
-Once the server starts, it performs an initial health check. If successful, the server becomes `Healthy` and is ready to accept tool calls.
+### Working Directory Resolution
+
+Each tool resolves its working directory in the following order:
+
+1. The `working_dir` argument passed directly in the tool call.
+2. The global `WORKING_DIRECTORY` set via `health_check` or the `-w` startup flag.
+3. The server process's current working directory (`os.getcwd()`).
 
 ### Server State
 
 The server maintains two internal states:
--   `WORKING_DIRECTORY`: The absolute path to the CMake project being managed.
--   `IS_HEALTHY`: A boolean flag indicating if the server is ready. This must be `true` for most tools to work.
+-   `WORKING_DIRECTORY`: The absolute path to the CMake project being managed (optional).
+-   `IS_HEALTHY`: A boolean flag updated by `health_check`. Tools no longer require this to be `true` — they resolve the working directory independently.
 
 ## 🛠️ Available Tools
 
@@ -43,14 +53,17 @@ client.call_tool("health_check", {"working_dir": "/path/to/another/project"})
 
 ### 2. `list_presets`
 
-Lists the available `configurePresets` from the `CMakePresets.json` file in the current working directory.
+Lists the available `configurePresets` from the `CMakePresets.json` file in the working directory.
 
--   **Arguments:** None
+-   **Arguments:**
+    -   `working_dir` (Optional[str]): Override the working directory for this call.
 -   **Returns:** A list of preset name strings.
 
 **Example:**
 ```python
 presets = client.call_tool("list_presets")
+# or with an explicit directory:
+presets = client.call_tool("list_presets", {"working_dir": "/path/to/project"})
 print(presets.text)
 # Output: ['default', 'ninja-multi-config', 'windows-msvc']
 ```
@@ -61,12 +74,15 @@ Configures the CMake project using a specified preset. This tool automatically d
 
 -   **Arguments:**
     -   `preset` (str): The name of the configure preset to use.
+    -   `working_dir` (Optional[str]): Override the working directory for this call.
     -   `cmake_defines` (Optional[dict]): A dictionary of CMake defines to pass with the `-D` flag (e.g., `{"MY_VAR": "VALUE"}`).
 -   **Returns:** A success or failure response.
 
 **Example:**
 ```python
 client.call_tool("configure_project", {"preset": "default"})
+# or with an explicit directory:
+client.call_tool("configure_project", {"preset": "default", "working_dir": "/path/to/project"})
 ```
 
 ### 4. `build_project`
@@ -75,6 +91,7 @@ Builds the project using a specified build preset. If the build fails, it return
 
 -   **Arguments:**
     -   `preset` (str): The name of the build preset to use.
+    -   `working_dir` (Optional[str]): Override the working directory for this call.
     -   `targets` (Optional[list[str]]): A list of specific targets to build.
     -   `verbose` (Optional[bool]): If `True`, enables verbose build output.
     -   `parallel_jobs` (Optional[int]): The number of parallel jobs to use for building.
@@ -87,6 +104,9 @@ client.call_tool("build_project", {"preset": "default"})
 
 # Build a specific target with 4 parallel jobs
 client.call_tool("build_project", {"preset": "default", "targets": ["my_executable"], "parallel_jobs": 4})
+
+# Build using an explicit directory
+client.call_tool("build_project", {"preset": "default", "working_dir": "/path/to/project"})
 ```
 
 ### 5. `test_project`
@@ -95,6 +115,7 @@ Runs tests for the project using a specified test preset.
 
 -   **Arguments:**
     -   `preset` (str): The name of the test preset to use.
+    -   `working_dir` (Optional[str]): Override the working directory for this call.
     -   `test_filter` (Optional[str]): A regex to filter which tests to run.
     -   `verbose` (Optional[bool]): If `True`, enables verbose test output.
     -   `parallel_jobs` (Optional[int]): The number of parallel tests to run.
@@ -107,4 +128,7 @@ client.call_tool("test_project", {"preset": "default"})
 
 # Run tests matching a specific name
 client.call_tool("test_project", {"preset": "default", "test_filter": "MyTest*"})
+
+# Run tests in a specific directory
+client.call_tool("test_project", {"preset": "default", "working_dir": "/path/to/project"})
 ```
