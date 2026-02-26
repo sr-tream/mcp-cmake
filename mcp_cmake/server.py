@@ -64,9 +64,9 @@ def list_presets(ctx: Context, working_dir: str) -> list[str]:
 
 @mcp.tool
 @tool_guard
-def create_project(ctx: Context, working_dir: str, preset: str, cmake_defines: Optional[dict] = None) -> dict:
+def configure_project(ctx: Context, working_dir: str, preset: str, cmake_defines: Optional[dict] = None) -> dict:
     """Configures the CMake project."""
-    return core.create_project(working_dir, preset, cmake_defines)
+    return core.configure_project(working_dir, preset, cmake_defines)
 
 
 @mcp.tool

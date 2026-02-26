@@ -55,7 +55,7 @@ print(presets.text)
 # 出力: ['default', 'ninja-multi-config', 'windows-msvc']
 ```
 
-### 3. `create_project`
+### 3. `configure_project`
 
 指定されたプリセットを使用してCMakeプロジェクトを設定します。このツールはコンパイラを自動検出し、構造化された診断ロギング（GCC/Clangの場合はJSON、MSVCの場合はSARIF）を有効にします。
 
@@ -66,7 +66,7 @@ print(presets.text)
 
 **例:**
 ```python
-client.call_tool("create_project", {"preset": "default"})
+client.call_tool("configure_project", {"preset": "default"})
 ```
 
 ### 4. `build_project`
